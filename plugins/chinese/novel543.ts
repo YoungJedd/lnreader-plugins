@@ -31,11 +31,75 @@ const escapeHtml = (str: string): string =>
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 
+/**
+ * Reusable helper to clean and extract text paragraphs from raw chapter HTML.
+ */
+const extractParagraphs = (html: string): string[] => {
+  const $ = parseHTML(html);
+  const $content = $('div.content.py-5');
+  if (!$content.length) return [];
+
+  $content
+    .find(
+      'script, style, ins, iframe, [class*="ads"], [id*="ads"], [class*="google"], [id*="google"], [class*="recommend"], div[align="center"], p:contains("推薦本書"), a[href*="javascript:"]',
+    )
+    .remove();
+
+  $content.find('p').each((_i, el) => {
+    const $p = $(el);
+    const pText = $p.text().trim();
+    if (
+      pText.includes('請記住本站域名') ||
+      pText.includes('手機版閱讀網址') ||
+      pText.includes('novel543') ||
+      pText.includes('稷下書院') ||
+      pText.includes('最快更新') ||
+      pText.includes('最新章節') ||
+      pText.includes('章節報錯') ||
+      pText.match(/app|APP|下載|客户端|关注微信|公众号/i) ||
+      pText.length === 0 ||
+      $p.html()?.replace(/&nbsp;/g, '').trim() === '' ||
+      pText.includes('溫馨提示')
+    ) {
+      $p.remove();
+    }
+  });
+
+  $content
+    .contents()
+    .filter(function () {
+      return this.type === 'comment';
+    })
+    .remove();
+
+  const paragraphs: string[] = [];
+
+  $content.find('p').each((_i, el) => {
+    const innerHtml = $(el).html() || '';
+    innerHtml
+      .split(/<\s*br[^>]*>/gi)
+      .map(line => parseHTML(`<div>${line}</div>`).text().trim())
+      .filter(line => line.length > 0)
+      .forEach(line => paragraphs.push(line));
+  });
+
+  if (paragraphs.length === 0) {
+    const rawText = $content.text().trim();
+    rawText
+      .split(/\n+/)
+      .map(l => l.trim())
+      .filter(Boolean)
+      .forEach(l => paragraphs.push(l));
+  }
+
+  return paragraphs;
+};
+
 class Novel543Plugin implements Plugin.PluginBase {
   id = 'novel543';
   name = 'Novel543';
   site = 'https://www.novel543.com/';
-  version = '1.0.4';
+  version = '1.0.5'; // Bumped version
   icon = 'src/cn/novel543/icon.png';
 
   imageRequestInit = {
@@ -186,68 +250,25 @@ class Novel543Plugin implements Plugin.PluginBase {
     const result = await fetchApi(chapterUrl);
     if (!result.ok) throw new Error('Failed to fetch chapter');
 
-    const $ = parseHTML(await result.text());
-    const $content = $('div.content.py-5');
-    if (!$content.length) return 'Error: Could not find chapter content';
+    const html1 = await result.text();
+    const paragraphs = extractParagraphs(html1);
 
-    $content
-      .find(
-        'script, style, ins, iframe, [class*="ads"], [id*="ads"], [class*="google"], [id*="google"], [class*="recommend"], div[align="center"], p:contains("推薦本書"), a[href*="javascript:"]',
-      )
-      .remove();
-
-    $content.find('p').each((_i, el) => {
-      const $p = $(el);
-      const pText = $p.text().trim();
-      if (
-        pText.includes('請記住本站域名') ||
-        pText.includes('手機版閱讀網址') ||
-        pText.includes('novel543') ||
-        pText.includes('稷下書院') ||
-        pText.includes('最快更新') ||
-        pText.includes('最新章節') ||
-        pText.includes('章節報錯') ||
-        pText.match(/app|APP|下載|客户端|关注微信|公众号/i) ||
-        pText.length === 0 ||
-        $p.html()?.replace(/&nbsp;/g, '').trim() === '' ||
-        pText.includes('溫馨提示')
-      ) {
-        $p.remove();
+    // Attempt to fetch Part 2 (e.g., replace .html with _2.html)
+    if (chapterUrl.endsWith('.html') && !chapterUrl.endsWith('_2.html')) {
+      const part2Url = chapterUrl.replace('.html', '_2.html');
+      try {
+        const result2 = await fetchApi(part2Url);
+        if (result2.ok) {
+          const html2 = await result2.text();
+          // Ensure we didn't just get redirected back to Part 1
+          if (html1 !== html2) {
+            const paragraphs2 = extractParagraphs(html2);
+            paragraphs.push(...paragraphs2);
+          }
+        }
+      } catch (e) {
+        // Silently fail if part 2 doesn't exist and proceed with what we have
       }
-    });
-
-    $content
-      .contents()
-      .filter(function () {
-        return this.type === 'comment';
-      })
-      .remove();
-
-    // Rebuild as <p> tags per paragraph (this is what Tadami's AI-translation
-    // chunker expects — see 69shu.ts). We escape decoded text before
-    // re-wrapping so paragraphs containing literal <, >, or & don't produce
-    // malformed/nested tags.
-    const paragraphs: string[] = [];
-
-    $content.find('p').each((_i, el) => {
-      const innerHtml = $(el).html() || '';
-      // A single <p> may itself contain <br> line breaks — split those
-      // into separate paragraphs too.
-      innerHtml
-        .split(/<\s*br[^>]*>/gi)
-        .map(line => parseHTML(`<div>${line}</div>`).text().trim())
-        .filter(line => line.length > 0)
-        .forEach(line => paragraphs.push(line));
-    });
-
-    // Fallback in case the page has no <p> structure at all
-    if (paragraphs.length === 0) {
-      const rawText = $content.text().trim();
-      rawText
-        .split(/\n+/)
-        .map(l => l.trim())
-        .filter(Boolean)
-        .forEach(l => paragraphs.push(l));
     }
 
     if (paragraphs.length === 0) return 'Error: Chapter content was empty';
@@ -311,11 +332,9 @@ class Novel543Plugin implements Plugin.PluginBase {
       }
     } catch (error) {
       if (error instanceof Error) {
-        // If it's already our custom error, re-throw it
         if (error.message.includes('Cloudflare protection detected')) {
           throw error;
         }
-        // For other errors, throw a generic error
         throw new Error(`Failed to fetch search results: ${error.message}`);
       }
       throw error;
