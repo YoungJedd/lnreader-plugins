@@ -223,17 +223,9 @@ class Novel543Plugin implements Plugin.PluginBase {
 
     let chapterText = $content.html();
     if (!chapterText) return 'Error: Chapter content was empty';
-
-    chapterText = chapterText
-      .replace(/<\s*p[^>]*>/gi, '\n\n')
-      .replace(/<\s*br[^>]*>/gi, '\n');
-
-    chapterText = parseHTML(`<div>${chapterText}</div>`).text();
-
-    return chapterText
-      .replace(/[\t ]+/g, ' ')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    
+    // Return the raw HTML so Tadami's AI translator can chunk the paragraphs properly
+    return chapterText;
   }
 
   async searchNovels(
