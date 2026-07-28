@@ -29,7 +29,7 @@ class Novel543Plugin implements Plugin.PluginBase {
   id = 'novel543';
   name = 'Novel543';
   site = 'https://www.novel543.com/';
-  version = '1.0.2';
+  version = '1.0.0';
   icon = 'src/cn/novel543/icon.png';
 
   imageRequestInit = {
@@ -173,7 +173,7 @@ class Novel543Plugin implements Plugin.PluginBase {
     return chapters;
   }
 
-async parseChapter(chapterPath: string): Promise<string> {
+ async parseChapter(chapterPath: string): Promise<string> {
     const chapterUrl = makeAbsolute(chapterPath, this.site);
     if (!chapterUrl) throw new Error('Invalid chapter URL');
 
@@ -184,14 +184,14 @@ async parseChapter(chapterPath: string): Promise<string> {
     const $content = $('div.content.py-5');
     if (!$content.length) return 'Error: Could not find chapter content';
 
-    // 1. Strip out ads, scripts, and layout bloat
+    // Remove scripts, ads, and junk elements
     $content
       .find(
         'script, style, ins, iframe, [class*="ads"], [id*="ads"], [class*="google"], [id*="google"], [class*="recommend"], div[align="center"], p:contains("推薦本書"), a[href*="javascript:"]',
       )
       .remove();
 
-    // 2. Remove spam/watermark paragraphs
+    // Filter out spam paragraphs
     $content.find('p').each((_i, el) => {
       const $p = $(el);
       const pText = $p.text().trim();
@@ -216,7 +216,7 @@ async parseChapter(chapterPath: string): Promise<string> {
       }
     });
 
-    // 3. Remove HTML comments
+    // Remove HTML comments
     $content
       .contents()
       .filter(function () {
@@ -224,27 +224,24 @@ async parseChapter(chapterPath: string): Promise<string> {
       })
       .remove();
 
-    // 4. Extract the raw, potentially messy HTML
     let chapterText = $content.html();
     if (!chapterText) return 'Error: Chapter content was empty';
 
-    // 5. Convert paragraph boundaries and line breaks into standard newlines
+    // Convert existing semantic tags into standard newlines first
     chapterText = chapterText
       .replace(/<\s*p[^>]*>/gi, '\n')
-      .replace(/<\s*br[^>]*>/gi, '\n');
+      .replace(/<\s*br\s*\/?>/gi, '\n');
 
-    // 6. Use Cheerio to parse out any remaining bad tags and resolve HTML entities (like &nbsp;) into pure text
+    // Strip any remaining unwanted HTML formatting
     chapterText = parseHTML(`<div>${chapterText}</div>`).text();
 
-    // 7. Rebuild the HTML: split the text, filter out empty lines, and wrap each line in a pristine <p> tag
-    const cleanHtml = chapterText
+    // Rebuild the text with structural <p> tags for Tadami's chunker
+    return chapterText
       .split('\n')
-      .map(line => line.trim())
-      .filter(line => line.length > 0)
-      .map(line => `<p>${line}</p>`)
+      .map((line) => line.trim())
+      .filter((line) => line !== '')
+      .map((line) => `<p>${line}</p>`)
       .join('\n');
-
-    return cleanHtml;
   }
 
   async searchNovels(
