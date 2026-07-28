@@ -223,8 +223,24 @@ class Novel543Plugin implements Plugin.PluginBase {
 
     let chapterText = $content.html();
     if (!chapterText) return 'Error: Chapter content was empty';
+
+    // 1. Convert all existing HTML formatting (<p> and <br>) into standard newlines
+    chapterText = chapterText
+      .replace(/<\s*p[^>]*>/gi, '\n\n')
+      .replace(/<\s*\/p[^>]*>/gi, '\n')
+      .replace(/<\s*br[^>]*>/gi, '\n');
+
+    // 2. Use Cheerio to strip out any leftover hidden tags (like <span> or <div>) to get pure text
+    chapterText = parseHTML(`<div>${chapterText}</div>`).text();
+
+    // 3. Rebuild the HTML purely with strict <p> tags so Tadami's chunker can parse it
+    const formattedHtml = chapterText
+      .split('\n')
+      .map(line => line.trim()) // Remove extra spaces
+      .filter(line => line.length > 0) // Remove empty lines
+      .map(line => `<p>${line}</p>`) // Wrap each line in a paragraph tag
+      .join('');
     
-    // Return the raw HTML so Tadami's AI translator can chunk the paragraphs properly
     return chapterText;
   }
 
