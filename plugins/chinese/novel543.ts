@@ -184,37 +184,12 @@ class Novel543Plugin implements Plugin.PluginBase {
     const $content = $('div.content.py-5');
     if (!$content.length) return 'Error: Could not find chapter content';
 
-    // Remove scripts, ads, and junk elements
+    // Remove junk elements completely
     $content
       .find(
-        'script, style, ins, iframe, [class*="ads"], [id*="ads"], [class*="google"], [id*="google"], [class*="recommend"], div[align="center"], p:contains("推薦本書"), a[href*="javascript:"]',
+        'script, style, ins, iframe, [class*="ads"], [id*="ads"], [class*="google"], [id*="google"], [class*="recommend"], div[align="center"], a[href*="javascript:"]'
       )
       .remove();
-
-    // Filter out spam paragraphs
-    $content.find('p').each((_i, el) => {
-      const $p = $(el);
-      const pText = $p.text().trim();
-      if (
-        pText.includes('請記住本站域名') ||
-        pText.includes('手機版閱讀網址') ||
-        pText.includes('novel543') ||
-        pText.includes('稷下書院') ||
-        pText.includes('最快更新') ||
-        pText.includes('最新章節') ||
-        pText.includes('章節報錯') ||
-        pText.match(/app|APP|下載|客户端|关注微信|公众号/i) ||
-        pText.length === 0 ||
-        ($p
-          .html()
-          ?.replace(/&nbsp;/g, '')
-          .trim() === '' &&
-          $p.find('img').length === 0) ||
-        pText.includes('溫馨提示')
-      ) {
-        $p.remove();
-      }
-    });
 
     // Remove HTML comments
     $content
@@ -224,24 +199,31 @@ class Novel543Plugin implements Plugin.PluginBase {
       })
       .remove();
 
-    let chapterText = $content.html();
-    if (!chapterText) return 'Error: Chapter content was empty';
-
-    // Convert existing semantic tags into standard newlines first
-    chapterText = chapterText
-      .replace(/<\s*p[^>]*>/gi, '\n')
-      .replace(/<\s*br\s*\/?>/gi, '\n');
-
-    // Strip any remaining unwanted HTML formatting
-    chapterText = parseHTML(`<div>${chapterText}</div>`).text();
-
-    // Rebuild the text with structural <p> tags for Tadami's chunker
-    return chapterText
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line !== '')
-      .map((line) => `<p>${line}</p>`)
+    // Map over the DOM elements natively, matching 69shu's exact extraction architecture
+    const chapterText = $content.find('p')
+      .map((_i, el) => $(el).text())
+      .get()
+      .map((line: string) => line.replace(/&nbsp;/g, '').trim())
+      .filter((line: string) => {
+        // Apply novel543's specific spam filters
+        return (
+          line !== '' &&
+          !line.includes('請記住本站域名') &&
+          !line.includes('手機版閱讀網址') &&
+          !line.includes('novel543') &&
+          !line.includes('稷下書院') &&
+          !line.includes('最快更新') &&
+          !line.includes('最新章節') &&
+          !line.includes('章節報錯') &&
+          !line.includes('推薦本書') &&
+          !line.match(/app|APP|下載|客户端|关注微信|公众号/i) &&
+          !line.includes('溫馨提示')
+        );
+      })
+      .map((line: string) => `<p>${line}</p>`)
       .join('\n');
+
+    return chapterText || 'Error: Chapter content was empty';
   }
 
   async searchNovels(
