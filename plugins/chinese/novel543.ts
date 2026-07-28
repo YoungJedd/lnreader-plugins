@@ -29,7 +29,7 @@ class Novel543Plugin implements Plugin.PluginBase {
   id = 'novel543';
   name = 'Novel543';
   site = 'https://www.novel543.com/';
-  version = '1.0.0';
+  version = '1.0.1';
   icon = 'src/cn/novel543/icon.png';
 
   imageRequestInit = {
