@@ -29,7 +29,7 @@ class Novel543Plugin implements Plugin.PluginBase {
   id = 'novel543';
   name = 'Novel543';
   site = 'https://www.novel543.com/';
-  version = '1.0.1';
+  version = '1.0.2';
   icon = 'src/cn/novel543/icon.png';
 
   imageRequestInit = {
@@ -241,7 +241,7 @@ class Novel543Plugin implements Plugin.PluginBase {
       .map(line => `<p>${line}</p>`) // Wrap each line in a paragraph tag
       .join('');
     
-    return chapterText;
+    return formattedHtml;
   }
 
   async searchNovels(
