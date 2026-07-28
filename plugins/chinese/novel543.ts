@@ -25,11 +25,17 @@ const makeAbsolute = (
   }
 };
 
+const escapeHtml = (str: string): string =>
+  str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
 class Novel543Plugin implements Plugin.PluginBase {
   id = 'novel543';
   name = 'Novel543';
   site = 'https://www.novel543.com/';
-  version = '1.0.3';
+  version = '1.0.4';
   icon = 'src/cn/novel543/icon.png';
 
   imageRequestInit = {
@@ -173,7 +179,7 @@ class Novel543Plugin implements Plugin.PluginBase {
     return chapters;
   }
 
- async parseChapter(chapterPath: string): Promise<string> {
+  async parseChapter(chapterPath: string): Promise<string> {
     const chapterUrl = makeAbsolute(chapterPath, this.site);
     if (!chapterUrl) throw new Error('Invalid chapter URL');
 
@@ -184,14 +190,32 @@ class Novel543Plugin implements Plugin.PluginBase {
     const $content = $('div.content.py-5');
     if (!$content.length) return 'Error: Could not find chapter content';
 
-    // Remove junk elements completely
     $content
       .find(
-        'script, style, ins, iframe, [class*="ads"], [id*="ads"], [class*="google"], [id*="google"], [class*="recommend"], div[align="center"], a[href*="javascript:"]'
+        'script, style, ins, iframe, [class*="ads"], [id*="ads"], [class*="google"], [id*="google"], [class*="recommend"], div[align="center"], p:contains("推薦本書"), a[href*="javascript:"]',
       )
       .remove();
 
-    // Remove HTML comments
+    $content.find('p').each((_i, el) => {
+      const $p = $(el);
+      const pText = $p.text().trim();
+      if (
+        pText.includes('請記住本站域名') ||
+        pText.includes('手機版閱讀網址') ||
+        pText.includes('novel543') ||
+        pText.includes('稷下書院') ||
+        pText.includes('最快更新') ||
+        pText.includes('最新章節') ||
+        pText.includes('章節報錯') ||
+        pText.match(/app|APP|下載|客户端|关注微信|公众号/i) ||
+        pText.length === 0 ||
+        $p.html()?.replace(/&nbsp;/g, '').trim() === '' ||
+        pText.includes('溫馨提示')
+      ) {
+        $p.remove();
+      }
+    });
+
     $content
       .contents()
       .filter(function () {
@@ -199,31 +223,36 @@ class Novel543Plugin implements Plugin.PluginBase {
       })
       .remove();
 
-    // Map over the DOM elements natively, matching 69shu's exact extraction architecture
-    const chapterText = $content.find('p')
-      .map((_i, el) => $(el).text())
-      .get()
-      .map((line: string) => line.replace(/&nbsp;/g, '').trim())
-      .filter((line: string) => {
-        // Apply novel543's specific spam filters
-        return (
-          line !== '' &&
-          !line.includes('請記住本站域名') &&
-          !line.includes('手機版閱讀網址') &&
-          !line.includes('novel543') &&
-          !line.includes('稷下書院') &&
-          !line.includes('最快更新') &&
-          !line.includes('最新章節') &&
-          !line.includes('章節報錯') &&
-          !line.includes('推薦本書') &&
-          !line.match(/app|APP|下載|客户端|关注微信|公众号/i) &&
-          !line.includes('溫馨提示')
-        );
-      })
-      .map((line: string) => `<p>${line}</p>`)
-      .join('\n');
+    // Rebuild as <p> tags per paragraph (this is what Tadami's AI-translation
+    // chunker expects — see 69shu.ts). We escape decoded text before
+    // re-wrapping so paragraphs containing literal <, >, or & don't produce
+    // malformed/nested tags.
+    const paragraphs: string[] = [];
 
-    return chapterText || 'Error: Chapter content was empty';
+    $content.find('p').each((_i, el) => {
+      const innerHtml = $(el).html() || '';
+      // A single <p> may itself contain <br> line breaks — split those
+      // into separate paragraphs too.
+      innerHtml
+        .split(/<\s*br[^>]*>/gi)
+        .map(line => parseHTML(`<div>${line}</div>`).text().trim())
+        .filter(line => line.length > 0)
+        .forEach(line => paragraphs.push(line));
+    });
+
+    // Fallback in case the page has no <p> structure at all
+    if (paragraphs.length === 0) {
+      const rawText = $content.text().trim();
+      rawText
+        .split(/\n+/)
+        .map(l => l.trim())
+        .filter(Boolean)
+        .forEach(l => paragraphs.push(l));
+    }
+
+    if (paragraphs.length === 0) return 'Error: Chapter content was empty';
+
+    return paragraphs.map(line => `<p>${escapeHtml(line)}</p>`).join('\n');
   }
 
   async searchNovels(
