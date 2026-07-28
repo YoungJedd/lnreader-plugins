@@ -173,7 +173,7 @@ class Novel543Plugin implements Plugin.PluginBase {
     return chapters;
   }
 
-  async parseChapter(chapterPath: string): Promise<string> {
+async parseChapter(chapterPath: string): Promise<string> {
     const chapterUrl = makeAbsolute(chapterPath, this.site);
     if (!chapterUrl) throw new Error('Invalid chapter URL');
 
@@ -184,12 +184,14 @@ class Novel543Plugin implements Plugin.PluginBase {
     const $content = $('div.content.py-5');
     if (!$content.length) return 'Error: Could not find chapter content';
 
+    // 1. Strip out ads, scripts, and layout bloat
     $content
       .find(
         'script, style, ins, iframe, [class*="ads"], [id*="ads"], [class*="google"], [id*="google"], [class*="recommend"], div[align="center"], p:contains("推薦本書"), a[href*="javascript:"]',
       )
       .remove();
 
+    // 2. Remove spam/watermark paragraphs
     $content.find('p').each((_i, el) => {
       const $p = $(el);
       const pText = $p.text().trim();
@@ -214,6 +216,7 @@ class Novel543Plugin implements Plugin.PluginBase {
       }
     });
 
+    // 3. Remove HTML comments
     $content
       .contents()
       .filter(function () {
@@ -221,19 +224,11 @@ class Novel543Plugin implements Plugin.PluginBase {
       })
       .remove();
 
-    let chapterText = $content.html();
-    if (!chapterText) return 'Error: Chapter content was empty';
+    // 4. Return the cleaned HTML directly to preserve <p> tags for the AI Translator
+    const chapterHtml = $content.html();
+    if (!chapterHtml) return 'Error: Chapter content was empty';
 
-    chapterText = chapterText
-      .replace(/<\s*p[^>]*>/gi, '\n\n')
-      .replace(/<\s*br[^>]*>/gi, '\n');
-
-    chapterText = parseHTML(`<div>${chapterText}</div>`).text();
-
-    return chapterText
-      .replace(/[\t ]+/g, ' ')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    return chapterHtml;
   }
 
   async searchNovels(
