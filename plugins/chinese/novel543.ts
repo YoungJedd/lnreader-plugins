@@ -224,11 +224,27 @@ async parseChapter(chapterPath: string): Promise<string> {
       })
       .remove();
 
-    // 4. Return the cleaned HTML directly to preserve <p> tags for the AI Translator
-    const chapterHtml = $content.html();
-    if (!chapterHtml) return 'Error: Chapter content was empty';
+    // 4. Extract the raw, potentially messy HTML
+    let chapterText = $content.html();
+    if (!chapterText) return 'Error: Chapter content was empty';
 
-    return chapterHtml;
+    // 5. Convert paragraph boundaries and line breaks into standard newlines
+    chapterText = chapterText
+      .replace(/<\s*p[^>]*>/gi, '\n')
+      .replace(/<\s*br[^>]*>/gi, '\n');
+
+    // 6. Use Cheerio to parse out any remaining bad tags and resolve HTML entities (like &nbsp;) into pure text
+    chapterText = parseHTML(`<div>${chapterText}</div>`).text();
+
+    // 7. Rebuild the HTML: split the text, filter out empty lines, and wrap each line in a pristine <p> tag
+    const cleanHtml = chapterText
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 0)
+      .map(line => `<p>${line}</p>`)
+      .join('\n');
+
+    return cleanHtml;
   }
 
   async searchNovels(
